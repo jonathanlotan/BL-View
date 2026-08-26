@@ -315,6 +315,7 @@ def preprocess(profiles: ProfileSet, config: Config | None = None) -> ProcessedP
         beta_smooth=beta_smooth,
         sigma=sigma,
         quality=flags,
+        sigma_single=sigma_single,
         beta_raw=np.asarray(profiles.beta),
         cloud_base_reported=profiles.cloud_base_reported,
         attrs=attrs,

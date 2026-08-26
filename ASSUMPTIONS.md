@@ -250,3 +250,175 @@ reliably (#V8).
 Consequence: **drizzle too light to reach `1e-5`, or virga that does not
 reach the ground, will not be screened** and may be reported as an aerosol
 layer. This is the single most likely source of a wrong layer in real data.
+
+---
+
+## D — Layer detection
+
+**#D1 — Detection runs on a Haar wavelet covariance transform at five
+dilations: 60, 120, 240, 480, 960 m. [tunable]**
+Brooks (2003) uses a single dilation chosen for the layer of interest. BL View
+must find both the sharp cap of a 250 m nocturnal stable layer and the broad,
+weak entrainment gradient at the top of a 1700 m afternoon mixed layer, and no
+single dilation does both. An edge seen at several dilations within a merge
+tolerance is one physical edge: its height comes from the **finest** dilation
+that saw it (best localisation) and the number of dilations that saw it becomes
+a persistence score feeding the confidence.
+
+**#D2 — Aerosol edges are found in log space; heights are localised in linear
+space.** This is a deliberate departure from Brooks 2003, which works on the
+range-corrected signal directly. In linear space the near-surface gradient is
+so much larger than an elevated haze edge that no relative-strength cut can
+keep both. Log space makes them comparable. But log space biases layer **tops
+upward** — for a layer decaying onto a background, the steepest *fractional*
+change is above the steepest *absolute* change — so once an edge is found, its
+height is snapped to the nearest significant extremum of the linear transform
+at the same dilation (`refine_edge_heights`). Measured against the synthetic
+truth this removed a systematic bias of tens of metres.
+
+**#D3 — Statistical significance is not physical significance. [tunable]**
+Inside a mixing layer the SNR reaches several hundred, so a 1 % ripple passes
+any `|W| > k·sigma` test while meaning nothing — and the detector then picks
+that ripple as the mixing-layer top in preference to the real edge above it.
+Three cuts are therefore applied together: `|W| > 3 sigma_W`, `|W|` at least
+10 % of the strongest edge at that dilation, and an **absolute** floor
+`|W| >= 0.03` in log10 units (about a 15 % change in backscatter). Without the
+absolute floor, validation p95 error on the mixing-layer top was 925 m; with
+it, 331 m.
+
+**#D4 — Two known systematic errors are propagated as *bias*, not noise.**
+Summing per-gate variances lets a correlated error average away, which is
+wrong and dangerous — it makes an artefact look highly significant.
+
+* *Overlap-model error* (#P2): the error profile
+  `overlap_uncertainty * (1 - O(R))` is pushed through the same Haar transform
+  as the data and added in quadrature to the transform's noise. Without it the
+  leftover ramp from an imperfect overlap correction is reliably detected as a
+  shallow layer at ~155 m.
+* *Log-clamp ramp*: where backscatter falls below the noise floor it is clamped
+  to `sigma(R)`, and since `sigma` grows as R² a fully-clamped stretch becomes
+  a smooth upward ramp — the signature of a layer *base*. Clamped gates are
+  therefore given a 0.5 dex uncertainty (a factor of ~3), which is all that is
+  actually known about them.
+
+**#D5 — Cloud is a magnitude decision, made first, at full time resolution.
+[tunable]**
+Threshold `1e-4 m^-1 sr^-1` over at least 2 consecutive gates, with the peak at
+least 8x the median of the 300 m below it. Aerosol in a polluted mixing layer
+peaks around `1e-5` and liquid cloud base runs `1e-4`-`1e-3`, so the threshold
+sits in the gap. It is a *fixed backscatter threshold*, so it depends on the
+profile-unit assumption (#V4) in a way the gradient-based detections do not.
+
+Cloud detection runs on the **unsmoothed** field while aerosol detection runs
+on the 5-minute average: a cloud return is 100x above noise and needs no
+averaging, whereas averaging would dilute an intermittent cumulus below the
+threshold and lose it entirely.
+
+**#D6 — Cloud masks the aerosol analysis above it, and the mask is a running
+minimum over the averaging window.** Excluding cloud from the *candidate list*
+is not enough — a cloud sitting in the upper half of a Haar window swamps the
+difference of the half-window means and erases the mixing-layer edge below it.
+Everything from 50 m below the cloud base upward is set to NaN before the
+transforms run, so contaminated windows return NaN and the same edge is still
+found at the smaller dilations whose windows stay clear. Because a cloud
+present in a few profiles is smeared across the whole temporal averaging
+window, the ceiling used is the running minimum over that window, not the
+profile's own cloud.
+
+Consequence: **nothing is reported above a cloud base.** This is physics, not
+policy — the beam is attenuated, and any "layer" found up there is an artefact
+of the extinction.
+
+**#D7 — Cloud tops are usually not determinable, and are reported as `null`.**
+A top is only claimed when the signal above the cloud recovers to at least 2x
+the noise floor over 300 m. For CL31-class instruments this almost never
+happens with liquid cloud, which is the honest answer. The code path is
+exercised by a unit test with a thin, transparent cloud.
+
+**#D8 — Layer type is decided by structure, not by height. [tunable]**
+Working upward: the lowest **surface-connected** top (no detected base beneath
+it) is the mixing-layer top; an elevated layer with its own detected base and a
+backscatter minimum below it is **decoupled** and therefore haze; an elevated
+layer sitting directly on the one below with no such base is contiguous and
+therefore the **residual layer**. Only one residual layer is reported per
+profile — a second contiguous layer with no base of its own is the decaying
+tail of the layer below, not a structure.
+
+**#D9 — A residual layer must be at least 300 m deep; other elevated layers
+200 m. [tunable]**
+The entrainment zone immediately above a mixing-layer top is genuine elevated
+aerosol and passes every contrast and SNR test, but it is the mixing layer's
+own upper transition, not a residual layer. Depth is what separates them: an
+entrainment zone scales with ~10 % of the mixing depth, a residual layer is
+hundreds of metres to kilometres deep. This one cut removed roughly 400 false
+residual layers per synthetic day.
+
+**#D10 — The mixing layer's reported base is 0 m.**
+It reaches the ground by definition. The lowest gate actually *measured* is
+90 m (#P2) and is recorded in the layer's `meta`.
+
+**#D11 — Confidence is a blend, not a probability.**
+`0.5 x edge significance + 0.3 x scale persistence + 0.2 x contrast`, multiplied
+by 0.6 for detections inside the overlap region. It is a **relative** quality
+ranking for sorting and display. It is not calibrated and must not be read as
+"70 % likely to be correct".
+
+---
+
+## T — Temporal tracking
+
+**#T1 — Each layer type is tracked on the height that identifies it.**
+Cloud and haze on their **base** (the sharp, well-determined edge, and for haze
+the quantity of interest); mixing and residual layers on their **top** (their
+base is the surface, or the layer below).
+
+**#T2 — Association is optimal (Hungarian), not greedy, within a jump
+tolerance of `250 m + 120 m per minute of gap`. [tunable]**
+The allowance is deliberately generous relative to real layer motion (morning
+mixing-layer growth reaches ~8 m/min) because detection scatter, not physical
+motion, dominates the profile-to-profile difference.
+
+**#T3 — A track shorter than 5 profiles is discarded as flicker; gaps shorter
+than 15 minutes are interpolated and marked. [tunable]**
+Interpolated points carry `interpolated=True` and half the confidence of the
+measurements bracketing them, so a consumer can always distinguish a filled
+point from a measured one. Gaps longer than that are left empty rather than
+bridged.
+
+**#T4 — At most one mixing layer and one residual layer per profile.**
+Two tracks of the same type can be alive at once — during the morning
+transition one follows the rising mixing-layer top while another still sits on
+the residual-layer top — and each fills its own gaps, so a profile could end up
+with a measured mixing layer *and* an interpolated one at a completely
+different height. A measured detection wins over an interpolated one, then
+confidence breaks ties. Cloud and haze are left alone: several of each in one
+profile is real.
+
+**#T5 — Heights are smoothed with a running median over 5 profiles.**
+A median removes single-profile spikes without rounding off genuine
+transitions the way a mean would.
+
+---
+
+## X — Validation
+
+**#X1 — Scoring is restricted to *observable* timestamps (#S4).**
+The counts of observable and skipped timestamps are printed, so the restriction
+is visible rather than hidden.
+
+**#X2 — Tolerances: cloud base 50 m, mixing/residual top and haze base 150 m,
+haze top 200 m.** Cloud is essentially gate-resolution limited; the aerosol
+tolerances are of order one entrainment-zone depth, which is the physical width
+of the feature being located. The haze top is the weakest edge in the scene and
+gets the loosest tolerance.
+
+**#X3 — Required detection rates are set below what a perfect algorithm could
+achieve, because parts of the scene are genuinely ambiguous.**
+The residual-layer requirement is the lowest (75 %) because during the two
+transitions the mixing layer and residual layer merge into a single
+indistinguishable feature. These thresholds are a **regression gate**, not a
+performance claim; the measured numbers are in the README.
+
+**#X4 — A 15 % false-positive rate is tolerated per feature.**
+Reporting a layer that truth says was absent is scored only on unscreened
+profiles where truth is unambiguous.

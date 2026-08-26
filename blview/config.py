@@ -38,6 +38,15 @@ class PreprocessConfig:
     #: signal.  Caps noise blow-up in the lowest gates.
     overlap_max_gain: float = 8.0
 
+    #: Fractional uncertainty in the modelled overlap function itself.  Since
+    #: the true overlap is not published, the correction is wrong by some
+    #: amount that grows as the correction grows.  This is a *correlated*
+    #: error across neighbouring gates, so it does not average away and it is
+    #: not noise -- it is propagated into the edge-detection significance as a
+    #: bias term (see detect.detector).  Without it, the residual of an
+    #: imperfect overlap correction is itself detected as a shallow layer.
+    overlap_uncertainty: float = 0.5
+
     #: Bottom of the range window used to estimate the residual detector
     #: background / noise floor.  Must be above any realistic aerosol.
     noise_ref_bottom_m: float = 6000.0
@@ -112,6 +121,15 @@ class DetectConfig:
     #: marginal extrema in clean profiles.
     min_relative_strength: float = 0.10
 
+    #: Absolute floor on |W| in log10(backscatter) units.  Inside a mixing
+    #: layer the SNR reaches several hundred, so a 1 % ripple is *statistically*
+    #: significant while being physically meaningless; the significance test
+    #: alone then picks a trivial wiggle as the mixing-layer top in preference
+    #: to the real edge above it.  W is roughly half the log10 change across an
+    #: edge, so 0.03 corresponds to a ~15 % change in backscatter -- the
+    #: smallest step worth calling a layer boundary.
+    min_edge_log_amplitude: float = 0.03
+
     #: Lowest height at which any layer boundary may be reported.  Between
     #: here and overlap_full_m detections are allowed but confidence-penalised.
     #: The default matches the lowest gate that survives the overlap-correction
@@ -139,6 +157,14 @@ class DetectConfig:
     #: Cloud peak must exceed this ratio times the median backscatter in the
     #: 300 m below its base -- enforces the "sharp return" requirement.
     cloud_sharpness_ratio: float = 8.0
+    #: Gates this far below a detected cloud base, and everything above them,
+    #: are masked out before the aerosol transforms are computed.  Excluding
+    #: cloud only from the *candidate* list is not enough: a cloud sitting in
+    #: the upper half of a Haar window swamps the difference of the half-window
+    #: means and erases the mixing-layer edge below it.  Masking makes the
+    #: contaminated windows return NaN instead, so the same edge is still found
+    #: at the smaller dilations whose windows stay clear of the cloud.
+    cloud_mask_margin_m: float = 50.0
     #: Above a cloud, if the signal stays within this multiple of the noise
     #: floor for cloud_opaque_probe_m the beam is considered extinguished and
     #: the cloud top is reported as None.
@@ -147,11 +173,22 @@ class DetectConfig:
 
     #: --- Aerosol layer classification -----------------------------------
     #: A surface-connected layer's mean backscatter must exceed this multiple
-    #: of the free-troposphere reference for the top to be a mixing-layer top.
-    surface_layer_min_contrast: float = 2.0
-    #: An elevated (residual/haze) layer must exceed this multiple of the
-    #: free-troposphere reference to be reported at all.
-    elevated_layer_min_contrast: float = 1.5
+    #: of the air just above it for its top to be a mixing-layer top.
+    #: Deliberately low: when a growing mixing layer is eating into a residual
+    #: layer, the contrast across the SML/RL interface is only ~1.5, and a
+    #: stricter gate makes the detector skip it and report the *residual*
+    #: layer top as the mixing height -- the single worst failure mode of a
+    #: single-height retrieval, and the one this tool exists to avoid.  Noise
+    #: is guarded against by the wavelet significance test and
+    #: min_edge_log_amplitude, not by this gate.
+    surface_layer_min_contrast: float = 1.15
+    #: An elevated (residual/haze) layer's mean backscatter must exceed this
+    #: multiple of the air just above its top to be reported at all.
+    elevated_layer_min_contrast: float = 2.0
+    #: ...and must itself be this many standard deviations above the noise.
+    #: Contrast alone is not enough: two noise excursions can have a large
+    #: ratio while neither is real.
+    elevated_layer_min_snr: float = 5.0
     #: Minimum base height for a layer to be called *haze* rather than a
     #: residual layer: haze is decoupled and sits well above the mixed layer.
     haze_min_base_m: float = 800.0
@@ -160,7 +197,14 @@ class DetectConfig:
     #: to this fraction of the elevated layer's own mean backscatter.
     decoupling_ratio: float = 0.6
     #: Minimum geometric depth of an elevated layer to be reported.
-    min_elevated_depth_m: float = 100.0
+    min_elevated_depth_m: float = 200.0
+    #: Minimum depth for a *residual* layer specifically.  The entrainment
+    #: zone immediately above a mixing-layer top is genuine elevated aerosol,
+    #: passes every contrast and SNR test, and is not a residual layer -- it is
+    #: the mixing layer's own upper transition.  Depth is what separates them:
+    #: an entrainment zone scales with ~10% of the mixing depth, a residual
+    #: layer is hundreds of metres to kilometres deep.
+    min_residual_depth_m: float = 300.0
 
     #: --- Confidence weighting -------------------------------------------
     #: Confidence multiplier applied to detections below overlap_full_m.

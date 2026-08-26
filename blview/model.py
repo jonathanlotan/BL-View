@@ -234,6 +234,11 @@ class ProcessedProfiles:
     beta_smooth: np.ndarray
     sigma: np.ndarray
     quality: np.ndarray
+    #: Noise standard deviation of the *unsmoothed* ``beta`` field.  Cloud
+    #: detection runs at full time resolution (cloud returns are 100x above
+    #: noise and averaging would dilute intermittent cumulus), so it needs the
+    #: unsmoothed noise, not ``sigma``.
+    sigma_single: Optional[np.ndarray] = None
     beta_raw: Optional[np.ndarray] = None
     cloud_base_reported: Optional[np.ndarray] = None
     attrs: dict[str, Any] = field(default_factory=dict)

@@ -110,8 +110,15 @@ class SyntheticScenario:
     # -------------------------------------------- backscatter magnitudes
     beta_molecular_surface: float = 1.7e-7   #: Rayleigh at 910 nm, m-1 sr-1
     beta_free_trop: float = 8.0e-8           #: residual aerosol aloft
-    beta_ml_day: float = 3.6e-6              #: well-mixed daytime aerosol
-    beta_ml_night: float = 6.5e-6            #: shallow layer -> concentrated
+    #: Mixing-layer aerosol backscatter at the *reference* depth
+    #: ``sml_night_m``.  A fixed aerosol burden spread through a deeper layer
+    #: is more dilute, so the value scales as (reference / depth)^exponent
+    #: rather than switching between a day and a night value: a step there
+    #: would make the mixing-layer/residual-layer contrast collapse
+    #: discontinuously at one instant, which no real atmosphere does.
+    beta_ml_reference: float = 6.5e-6
+    beta_ml_floor: float = 2.6e-6            #: deep, well-diluted afternoon layer
+    beta_ml_dilution_exponent: float = 0.5
     beta_residual: float = 2.4e-6
     beta_haze: float = 1.9e-6
     beta_cloud_peak: float = 3.0e-3
@@ -310,8 +317,14 @@ def build_profile(
 
     # --- surface mixing layer -------------------------------------------
     sml = state["sml_top"] or mixing_layer_height(hour, sc)
-    is_night = hour < 6.0 or hour >= 19.5
-    beta_ml = sc.beta_ml_night if is_night else sc.beta_ml_day
+    beta_ml = float(
+        np.clip(
+            sc.beta_ml_reference
+            * (sc.sml_night_m / max(sml, 1.0)) ** sc.beta_ml_dilution_exponent,
+            sc.beta_ml_floor,
+            sc.beta_ml_reference,
+        )
+    )
     entrain = max(0.10 * sml, 60.0)          # entrainment-zone depth
     ml_shape = _slab(r, None, sml, d_top=entrain)
     # Aerosol thins slightly with height inside the mixed layer.
