@@ -422,3 +422,77 @@ performance claim; the measured numbers are in the README.
 **#X4 — A 15 % false-positive rate is tolerated per feature.**
 Reporting a layer that truth says was absent is scored only on unscreened
 profiles where truth is unambiguous.
+
+---
+
+## A — Storage and API
+
+**#A1 — SQLite for layers, netCDF for grids, both in a plain data directory.**
+The specification suggested "SQLite + a data directory of netCDF/parquet
+files"; this follows it, and the split is on purpose. Detected layers are
+small, are queried by time range and type, and want transactional replacement
+when a period is reprocessed — that is a database. Backscatter grids are
+large, dense, homogeneous float arrays with coordinate axes and units — that
+is netCDF, which every atmospheric-science tool already reads, and which
+parquet (a columnar *tabular* format) fits far worse. Putting megabyte BLOBs
+in SQLite would make the file unbrowsable by the tools the user already has.
+Nothing needs installing or administering, and the rolling window is a
+`DELETE` plus an `unlink`.
+
+**#A2 — Grids are stored as float32. [tunable]**
+~7 significant digits, against a 20-bit instrument profile — four orders of
+magnitude more precision than the data has. Halves the files.
+
+**#A3 — Both the raw and the processed grid are archived.**
+`beta_att_raw` is what the adapter delivered; `beta_att` is after correction.
+Reprocessing with new thresholds can start from the instrument's own numbers
+without going back to the raw files. The intermediate smoothed field and the
+noise estimate are *not* stored — they are cheap to recompute and would double
+the volume again.
+
+**#A4 — Re-ingesting a period replaces it. [idempotent]**
+Grid files overlapping the new span are unlinked and layers in the span are
+deleted before insert, so running the pipeline twice can never duplicate.
+
+**#A5 — Retention drops a grid file only when it lies *entirely* before the
+cutoff.** A file straddling the cutoff still holds data inside the window.
+Default retention is 72 h against a default API window of 24 h.
+
+**#A6 — One ingest is processed as a single in-memory block.**
+Roughly 40 MB of RAM per hour of CL31 data at 30 s cadence. Splitting it would
+introduce edge effects in the temporal smoothing and break tracking across the
+seam. Operationally this is not a limit — data arrives incrementally and each
+ingest covers minutes to hours — but a one-shot ingest of a month of archive
+would need chunking with overlap, which is not implemented.
+
+**#A7 — The grid is served downsampled and quantised to one byte per cell.**
+A 24 h CL31 grid is 2.2 million cells; as JSON numbers that is tens of
+megabytes for a picture ~1200 pixels wide. The API block-averages to the
+requested display size (never decimates — dropping samples would make an
+intermittent cumulus appear and disappear with zoom level) and quantises to
+log10 bytes, which is what the heatmap draws anyway. Quantisation error is
+~1.6 % of a decade, far below the measurement uncertainty.
+
+**#A8 — Byte 0 means *missing*; non-positive backscatter clamps to byte 1.**
+Background-subtracted backscatter is legitimately negative wherever there is
+no signal, which is most of the profile above ~4 km. That is measured data,
+not absent data — reporting it as missing turned a third of a normal quicklook
+into holes.
+
+**#A9 — Quality flags are OR-ed, never averaged, when downsampling.**
+A block containing any screened profile stays marked screened.
+
+**#A10 — Window layers are columnar and carry no diagnostics.**
+As a list of JSON objects the layers outweighed the entire quantised grid by
+an order of magnitude. Grouped into per-type parallel arrays and rounded to
+the precision the data has, they cost a fraction of that, and arrive in the
+form a canvas renderer wants. Full records with `meta` remain at `/api/layers`.
+
+**#A11 — Colour scale defaults to log10 beta in [-7.5, -3.5]. [tunable]**
+Below the molecular background of a clean free troposphere, up to above where
+a CL31 profile saturates inside cloud, so the whole physical range fits.
+Data percentiles are returned with every window so a client can auto-scale.
+
+**#A12 — The API binds to 127.0.0.1 by default and has no authentication.**
+It is a local visualisation tool. Exposing it on a network is a deployment
+decision, and would need auth and TLS put in front of it.
