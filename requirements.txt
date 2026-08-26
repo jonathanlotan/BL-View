@@ -1,0 +1,8 @@
+# BL View runtime dependencies.
+# Pinned to lower bounds; tested with the versions in the comments.
+numpy>=1.24            # tested 2.4.6
+scipy>=1.10            # tested 1.17.1  (Hungarian matching, filters)
+netCDF4>=1.6           # tested 1.7.4   (processed backscatter grid store)
+fastapi>=0.110         # tested 0.141.1
+uvicorn[standard]>=0.27
+pytest>=7.0
