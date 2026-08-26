@@ -203,3 +203,62 @@ class ProfileSet:
             ),
             attrs={**other.attrs, **self.attrs},
         )
+
+
+@dataclass
+class ProcessedProfiles:
+    """Output of :func:`blview.preprocess.preprocess`.
+
+    Carries three versions of the backscatter field, deliberately:
+
+    ``beta_raw``
+        Exactly what the adapter delivered.  Archived so a reprocessing run
+        can start from the instrument's own numbers.
+    ``beta``
+        Range-corrected, background-offset removed, overlap-corrected, at full
+        time resolution.  This is what the quicklook heatmap displays -- it is
+        the crispest honest version of the data.
+    ``beta_smooth``
+        ``beta`` additionally averaged in time and height, with screened
+        profiles excluded from the average.  This is what layer detection
+        runs on; a single ceilometer profile is far too noisy to find a weak
+        elevated gradient in.
+
+    ``sigma`` is the propagated noise standard deviation **of beta_smooth**,
+    which is what the detection significance thresholds are compared against.
+    """
+
+    time: np.ndarray
+    range_: np.ndarray
+    beta: np.ndarray
+    beta_smooth: np.ndarray
+    sigma: np.ndarray
+    quality: np.ndarray
+    beta_raw: Optional[np.ndarray] = None
+    cloud_base_reported: Optional[np.ndarray] = None
+    attrs: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def n_time(self) -> int:
+        return int(self.time.size)
+
+    @property
+    def n_range(self) -> int:
+        return int(self.range_.size)
+
+    @property
+    def range_resolution(self) -> float:
+        if self.range_.size < 2:
+            return float("nan")
+        return float(np.median(np.diff(self.range_)))
+
+    def screened_mask(self) -> np.ndarray:
+        """(n_time,) bool -- True where the profile must not be used for detection."""
+        blocking = int(
+            QualityFlag.PRECIPITATION
+            | QualityFlag.FOG
+            | QualityFlag.LOW_SNR
+            | QualityFlag.INSTRUMENT_ALARM
+            | QualityFlag.NO_DETECTION
+        )
+        return (np.asarray(self.quality) & blocking) != 0

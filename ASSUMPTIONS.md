@@ -171,3 +171,82 @@ fast the synthetic beam is extinguished.
 The generator clips to ±524287 counts exactly as the real format does, which
 reproduces the real-world consequence that cloud tops are frequently not
 determinable.
+
+---
+
+## P — Preprocessing
+
+**#P1 — R² range correction is applied only when the adapter says it is
+needed.** `ProfileSet.range_corrected` drives this. Applying R² twice is a
+silent, catastrophic error that looks superficially plausible (it just tilts
+the profile), so it is controlled by the format adapter rather than by a flag
+the operator has to remember.
+
+**#P2 — The near-range overlap function is unknown, so it is modelled and the
+un-modellable part is masked. [tunable]**
+The specification says to assume incomplete overlap below ~200 m. BL View
+models overlap as `((R - 30) / 170)^2`, rising from zero at 30 m to full
+overlap at 200 m. **Gates where the correction would need a gain above
+`overlap_max_gain` (8x) are masked out entirely, not corrected** — the lowest
+usable gate is therefore 90 m. Dividing a noisy signal by a small *guessed*
+overlap value manufactures gradients that look exactly like a shallow
+nocturnal layer, and there is no way to tell them from the real thing after
+the fact. `DetectConfig.min_layer_height_m` (90 m) is set to match.
+
+Consequence: **BL View cannot report a layer below 90 m.** A very shallow
+nocturnal stable layer (which can be 50-100 m in strong radiative cooling)
+will be missed, or its top reported at the 90 m floor. Supplying a real
+measured overlap function for the instrument is the only fix.
+
+**#P3 — Detector background is removed as a residual offset in
+un-range-corrected space.** A constant detector offset `eps` appears in an
+already-range-corrected profile as `eps * R^2` — a growing ramp, not a
+constant. It is estimated as the median of `beta / R^2` above 6 km and
+subtracted as `eps * R^2`. On CL-series data (already background-corrected by
+the firmware) this is a near-no-op, which is the intended behaviour.
+
+**#P4 — Nothing above 6 km is signal. [tunable]**
+`noise_ref_bottom_m = 6000` defines the "noise only" reference window used for
+both the background offset and the noise scale. At a site with routine
+cirrus or elevated smoke above 6 km this window must be raised, or the noise
+scale will be overestimated and real layers suppressed.
+
+**#P5 — Noise model: `sigma(R)^2 = (sigma0 * R^2)^2 + (0.02 * beta)^2`. [tunable]**
+The first term is detector noise, which is constant in raw photon units and
+therefore grows as R² once range-corrected; `sigma0` is measured per profile
+from the far-field scatter (robust MAD estimator, smoothed over 15 profiles).
+The second is signal-proportional speckle. Without the speckle term the model
+implies essentially zero noise near the ground, which would make every trivial
+low-level wiggle statistically significant.
+
+**#P6 — Detection runs on a 5-minute / 40 m average, not on single profiles.
+[tunable]**
+A single ceilometer profile has SNR ~2 at the height of a weak elevated haze
+layer — far too noisy for gradient detection. `beta_smooth` is a boxcar
+average in time and height, and `sigma` is propagated through it using the
+Kish effective sample size, so partially-masked or edge windows get the right
+noise, not an assumed one. The full-resolution `beta` field is kept separately
+and is what the quicklook displays.
+
+Consequence: **reported layer heights are 5-minute averages.** Genuinely
+fast transitions (a convective plume, a passing front) are smeared over that
+window.
+
+**#P7 — Screened profiles are excluded from their neighbours' averages, and a
+profile whose average has too few contributors is flagged `NO_DETECTION`.**
+Otherwise a fog bank would corrupt the ten profiles either side of it.
+Screening is dilated by one profile in each direction, deliberately erring
+towards discarding a good profile rather than trusting a contaminated one.
+
+**#P8 — Precipitation is tested before fog, and separated from it by depth.**
+Precipitation is surface-connected backscatter above `1e-5 m^-1 sr^-1`
+continuously filling 800 m or more (tolerating 150 m dropouts). Fog is a
+strong *shallow* return (peak above `3e-5` below 300 m) that leaves the
+profile above 600 m at the noise floor. A precipitating profile also looks
+extinguished aloft, so testing fog first would misclassify it. Neither test
+uses the instrument's own status digit, which not all instruments provide
+reliably (#V8).
+
+Consequence: **drizzle too light to reach `1e-5`, or virga that does not
+reach the ground, will not be screened** and may be reported as an aerosol
+layer. This is the single most likely source of a wrong layer in real data.

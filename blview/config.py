@@ -49,23 +49,36 @@ class PreprocessConfig:
     #: time (a single profile gives a very uncertain sigma).
     noise_time_smooth: int = 15
 
-    #: --- Fog / full-obscuration screening -------------------------------
-    #: A profile is fog if the mean backscatter below fog_probe_m exceeds
-    #: fog_beta_threshold AND the signal is extinguished (falls to the noise
-    #: floor) below fog_extinction_height_m.
-    fog_probe_m: float = 300.0
-    fog_beta_threshold: float = 5.0e-5      # m-1 sr-1
-    fog_extinction_height_m: float = 600.0
+    #: Multiplicative ("speckle") noise as a fraction of the signal itself.
+    #: Without this the pure R^2 detector-noise model implies near-zero noise
+    #: close to the ground, which would make every trivial low-level wiggle
+    #: statistically significant.  Added in quadrature with the R^2 term.
+    speckle_fraction: float = 0.02
 
     #: --- Precipitation screening ----------------------------------------
-    #: Precipitation shows as surface-connected enhanced backscatter filling a
-    #: deep layer with no distinct top.  Flag when more than
-    #: precip_fill_fraction of gates between precip_bottom_m and precip_top_m
-    #: exceed precip_beta_threshold.
+    #: Precipitation is *surface-connected enhanced backscatter filling a deep
+    #: layer*.  The discriminator is the "fill depth": the height up to which
+    #: backscatter stays continuously above precip_beta_threshold, starting
+    #: from precip_bottom_m and tolerating short dropouts.  Cloud does not
+    #: trigger it (not surface-connected) and mixing-layer aerosol does not
+    #: reach the threshold.  Evaluated BEFORE fog, because a precipitating
+    #: profile also looks extinguished aloft.
     precip_bottom_m: float = 100.0
-    precip_top_m: float = 3000.0
-    precip_beta_threshold: float = 8.0e-6   # m-1 sr-1
-    precip_fill_fraction: float = 0.55
+    precip_beta_threshold: float = 1.0e-5   # m-1 sr-1; well above ML aerosol
+    precip_min_depth_m: float = 800.0
+    precip_gap_tolerance_m: float = 150.0   # dropout tolerated within the fill
+
+    #: --- Fog / full-obscuration screening -------------------------------
+    #: Fog is a *strong but shallow* near-surface return that extinguishes the
+    #: beam: peak backscatter below fog_probe_m exceeds fog_beta_threshold AND
+    #: the profile above fog_extinction_height_m has collapsed to the noise
+    #: floor.  The shallowness requirement (fill depth below the precipitation
+    #: depth) is what separates fog from precipitation.
+    fog_probe_m: float = 300.0
+    fog_beta_threshold: float = 3.0e-5      # m-1 sr-1, on the peak not the mean
+    fog_extinction_height_m: float = 600.0
+    fog_extinction_span_m: float = 1400.0   # band above that height to test
+    fog_extinction_snr: float = 2.0         # median SNR in that band
 
     #: --- Low-SNR screening ----------------------------------------------
     #: Minimum median SNR in the 200-1500 m band for a profile to be usable.
@@ -99,9 +112,13 @@ class DetectConfig:
     #: marginal extrema in clean profiles.
     min_relative_strength: float = 0.10
 
-    #: Lowest height at which any layer boundary may be reported.  Below the
-    #: overlap height detections are allowed but confidence-penalised.
-    min_layer_height_m: float = 60.0
+    #: Lowest height at which any layer boundary may be reported.  Between
+    #: here and overlap_full_m detections are allowed but confidence-penalised.
+    #: The default matches the lowest gate that survives the overlap-correction
+    #: gain cap (see preprocess.overlap_function): correcting below that would
+    #: mean dividing by an overlap value small enough to manufacture gradients
+    #: out of noise.
+    min_layer_height_m: float = 90.0
 
     #: Highest height at which an *aerosol* layer may be reported.  Above this
     #: CL31 SNR is too poor for a trustworthy gradient.

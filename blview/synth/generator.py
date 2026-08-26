@@ -53,6 +53,10 @@ _HEXCHARS = np.frombuffer(b"0123456789ABCDEF", dtype=np.uint8)
 #: Lidar ratios (extinction-to-backscatter, sr) used to build the attenuation.
 LIDAR_RATIO_AEROSOL = 30.0
 LIDAR_RATIO_CLOUD = 18.0
+#: Rain/drizzle: large drops backscatter strongly for their extinction, so the
+#: lidar ratio is far lower than for fine aerosol.  Without this, synthetic
+#: precipitation would attenuate itself away within a few hundred metres.
+LIDAR_RATIO_PRECIP = 12.0
 LIDAR_RATIO_MOLECULAR = 8.0 * math.pi / 3.0
 
 
@@ -111,8 +115,8 @@ class SyntheticScenario:
     beta_residual: float = 2.4e-6
     beta_haze: float = 1.9e-6
     beta_cloud_peak: float = 3.0e-3
-    beta_fog: float = 1.2e-4
-    beta_precip: float = 1.5e-5
+    beta_fog: float = 4.0e-4
+    beta_precip: float = 3.0e-5
 
     # ------------------------------------------------------ instrument model
     #: Detector-noise standard deviation of the *range-corrected* profile at
@@ -327,16 +331,22 @@ def build_profile(
         base, top, amp = haze
         aerosol += sc.beta_haze * amp * _slab(r, base, top, d_bot=90.0, d_top=140.0)
 
+    beta = beta + aerosol
+    alpha = alpha + LIDAR_RATIO_AEROSOL * aerosol
+
     # --- fog -------------------------------------------------------------
+    # Optically thick enough to be genuine full obscuration: extinction
+    # ~1.2e-2 m-1 gives ~250 m visibility, so the beam is dead above ~300 m.
     if state["fog"]:
-        aerosol += sc.beta_fog * _slab(r, None, 140.0, d_top=90.0)
+        fog = sc.beta_fog * _slab(r, None, 300.0, d_top=120.0)
+        beta = beta + fog
+        alpha = alpha + LIDAR_RATIO_AEROSOL * fog
 
     # --- precipitation ---------------------------------------------------
     if state["precip"]:
-        aerosol += sc.beta_precip * _slab(r, None, 1200.0, d_bot=40.0, d_top=260.0)
-
-    beta = beta + aerosol
-    alpha = alpha + LIDAR_RATIO_AEROSOL * aerosol
+        precip = sc.beta_precip * _slab(r, None, 1200.0, d_bot=40.0, d_top=260.0)
+        beta = beta + precip
+        alpha = alpha + LIDAR_RATIO_PRECIP * precip
 
     # --- cloud -----------------------------------------------------------
     if state["cloud_base"] is not None:
