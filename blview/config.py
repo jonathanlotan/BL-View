@@ -203,8 +203,12 @@ class DetectConfig:
     #: passes every contrast and SNR test, and is not a residual layer -- it is
     #: the mixing layer's own upper transition.  Depth is what separates them:
     #: an entrainment zone scales with ~10% of the mixing depth, a residual
-    #: layer is hundreds of metres to kilometres deep.
-    min_residual_depth_m: float = 300.0
+    #: layer is hundreds of metres to kilometres deep.  Measured across seven
+    #: synthetic days at different diurnal phases, raising this from 300 m to
+    #: 500 m takes residual-layer false positives from 3-20% to 0% for about
+    #: 2 points of detection rate: below ~500 m the two are not separable at
+    #: this vertical resolution, so claiming a residual layer there is a guess.
+    min_residual_depth_m: float = 500.0
 
     #: --- Confidence weighting -------------------------------------------
     #: Confidence multiplier applied to detections below overlap_full_m.

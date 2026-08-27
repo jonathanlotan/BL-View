@@ -344,14 +344,18 @@ therefore the **residual layer**. Only one residual layer is reported per
 profile — a second contiguous layer with no base of its own is the decaying
 tail of the layer below, not a structure.
 
-**#D9 — A residual layer must be at least 300 m deep; other elevated layers
+**#D9 — A residual layer must be at least 500 m deep; other elevated layers
 200 m. [tunable]**
 The entrainment zone immediately above a mixing-layer top is genuine elevated
 aerosol and passes every contrast and SNR test, but it is the mixing layer's
 own upper transition, not a residual layer. Depth is what separates them: an
 entrainment zone scales with ~10 % of the mixing depth, a residual layer is
 hundreds of metres to kilometres deep. This one cut removed roughly 400 false
-residual layers per synthetic day.
+residual layers per synthetic day at 300 m; measured across seven synthetic
+days, raising it to 500 m took residual-layer false positives from 3–20 % to
+**0 %** for about 2 points of detection rate. Below ~500 m the two are not
+separable at this vertical resolution, so claiming a residual layer there is a
+guess.
 
 **#D10 — The mixing layer's reported base is 0 m.**
 It reaches the ground by definition. The lowest gate actually *measured* is
@@ -412,12 +416,19 @@ tolerances are of order one entrainment-zone depth, which is the physical width
 of the feature being located. The haze top is the weakest edge in the scene and
 gets the loosest tolerance.
 
-**#X3 — Required detection rates are set below what a perfect algorithm could
-achieve, because parts of the scene are genuinely ambiguous.**
-The residual-layer requirement is the lowest (75 %) because during the two
-transitions the mixing layer and residual layer merge into a single
+**#X3 — Every gate is set below the *measured range*, not at the best observed
+run.** Performance was measured across seven synthetic days at different
+diurnal phases and noise seeds; the dominant source of run-to-run variation is
+how many of the two daily transition windows land inside the 24 h window. The
+mixing-layer within-tolerance figure ranges 89.9–91.5 %, so the gate is 85 %.
+The residual-layer detection requirement is the lowest (75 %) because during
+the transitions the mixing and residual layers merge into a single
 indistinguishable feature. These thresholds are a **regression gate**, not a
-performance claim; the measured numbers are in the README.
+performance claim; the measured ranges are in the README.
+
+A gate tuned to one lucky run fails on the next one for reasons that have
+nothing to do with the code — which is exactly what happened during
+development, and is why the numbers were re-measured across seeds.
 
 **#X4 — A 15 % false-positive rate is tolerated per feature.**
 Reporting a layer that truth says was absent is scored only on unscreened
