@@ -168,9 +168,11 @@ def cmd_demo(args: argparse.Namespace) -> int:
     from .validate import check, format_report, load_truth, score_all
 
     config = _load_config(args)
-    sample_dir = Path(config.store.data_dir) / "samples"
-    raw = sample_dir / "synthetic_cl31.dat"
-    truth_path = sample_dir / "synthetic_cl31_truth.json"
+    # Generated data goes to data/generated/, which is git-ignored. The small
+    # committed sample under data/samples/ is documentation, not scratch space.
+    generated = Path(config.store.data_dir) / "generated"
+    raw = generated / "synthetic_cl31.dat"
+    truth_path = generated / "synthetic_cl31_truth.json"
 
     if args.regenerate or not raw.exists():
         print(f"[1/4] generating {args.hours:.0f} h of synthetic CL31 data ...")
@@ -231,7 +233,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_adapters)
 
     p = sub.add_parser("synth", help="generate a synthetic raw ceilometer file")
-    p.add_argument("-o", "--output", default="data/samples/synthetic_cl31.dat")
+    p.add_argument("-o", "--output", default="data/generated/synthetic_cl31.dat")
     p.add_argument("--hours", type=float, default=None, help="duration (default 24)")
     p.add_argument("--interval", type=float, default=None, help="profile interval, s")
     p.add_argument("--seed", type=int, default=None)

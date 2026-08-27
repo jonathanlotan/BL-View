@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BL View — ceilometer layer quicklook</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232a78d6'/%3E%3Cpath d='M2 11h12M2 7.5h12' stroke='%23eb6834' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-palette="#eb6834,#4a3aa7,#eda100,#e87ba4">
+<header class="topbar">
+  <div class="brand">
+    <h1>BL View</h1>
+    <p class="site" id="site-line">loading…</p>
+  </div>
+  <div class="topbar-actions">
+    <button id="theme-toggle" class="ghost" type="button" aria-label="Switch colour theme">
+      <span id="theme-label">Auto</span>
+    </button>
+  </div>
+</header>
+
+<p class="caveat" role="note">
+  <strong>Aerosol gradients, not temperature.</strong>
+  Every height below is a gradient in attenuated aerosol backscatter. BL View does not
+  measure, derive or estimate inversion temperature or strength. Aerosol layer boundaries
+  often coincide with thermodynamic inversions, but they are not the same quantity.
+</p>
+
+<section class="controls" aria-label="Display controls">
+  <label class="control">
+    <span>Window</span>
+    <select id="hours">
+      <option value="3">3 h</option>
+      <option value="6">6 h</option>
+      <option value="12">12 h</option>
+      <option value="24" selected>24 h</option>
+      <option value="48">48 h</option>
+      <option value="72">72 h</option>
+    </select>
+  </label>
+  <label class="control">
+    <span>Top of plot</span>
+    <select id="max-height">
+      <option value="2000">2 km</option>
+      <option value="4000" selected>4 km</option>
+      <option value="6000">6 km</option>
+      <option value="">full range</option>
+    </select>
+  </label>
+  <label class="control">
+    <span>Colour scale</span>
+    <select id="scale">
+      <option value="default" selected>Aerosol 10⁻⁶·³–10⁻⁵</option>
+      <option value="auto">Auto (1st–99th pct)</option>
+      <option value="full">Full 10⁻⁷·⁵–10⁻³·⁵</option>
+    </select>
+  </label>
+  <label class="control">
+    <span>Min confidence</span>
+    <input id="confidence" type="range" min="0" max="0.9" step="0.05" value="0">
+    <output id="confidence-out">0.00</output>
+  </label>
+  <fieldset class="control layer-toggles">
+    <legend>Layers</legend>
+    <label><input type="checkbox" data-layer="mixing_layer" checked> Mixing</label>
+    <label><input type="checkbox" data-layer="residual_layer" checked> Residual</label>
+    <label><input type="checkbox" data-layer="haze" checked> Haze</label>
+    <label><input type="checkbox" data-layer="cloud" checked> Cloud</label>
+  </fieldset>
+  <button id="refresh" class="ghost" type="button">Refresh</button>
+</section>
+
+<main>
+  <figure class="chart-card">
+    <figcaption>
+      <h2>Attenuated backscatter and tracked aerosol layers</h2>
+      <p id="chart-subtitle" class="muted"></p>
+    </figcaption>
+
+    <div class="plot-wrap">
+      <div id="plot" class="plot">
+        <canvas id="heatmap"></canvas>
+        <canvas id="overlay"></canvas>
+        <div id="tooltip" class="tooltip" role="status" aria-live="polite" hidden></div>
+      </div>
+      <div class="colourbar">
+        <span class="cb-title">Attenuated<br>backscatter<br><span class="muted">m⁻¹ sr⁻¹</span></span>
+        <canvas id="colourbar" width="18" height="240"></canvas>
+        <div id="colourbar-ticks" class="cb-ticks"></div>
+      </div>
+    </div>
+
+    <div class="legend" id="legend" role="list"></div>
+    <p class="muted footnote" id="screen-note"></p>
+  </figure>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Latest profile</h2>
+      <p class="muted" id="latest-time">—</p>
+    </div>
+    <table class="layer-table" id="latest-table">
+      <caption class="visually-hidden">
+        Layers detected in the most recent profile. Heights are metres above the
+        instrument; they are aerosol backscatter gradients, not temperatures.
+      </caption>
+      <thead>
+        <tr><th scope="col">Layer</th><th scope="col">Base</th><th scope="col">Top</th>
+            <th scope="col">Confidence</th><th scope="col">Source</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p class="muted footnote" id="latest-note"></p>
+  </section>
+</main>
+
+<footer class="footer">
+  <p class="muted">
+    Layer heights are aerosol backscatter gradients above the instrument.
+    Detection is suppressed below the incomplete-overlap height, during
+    precipitation and fog, and above any cloud base (the beam is attenuated there).
+    Cloud tops read “not determinable” whenever the beam is extinguished inside the cloud.
+  </p>
+</footer>
+
+<script src="/static/app.js" type="module"></script>
+</body>
+</html>

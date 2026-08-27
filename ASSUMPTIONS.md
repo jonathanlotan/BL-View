@@ -496,3 +496,70 @@ Data percentiles are returned with every window so a client can auto-scale.
 **#A12 — The API binds to 127.0.0.1 by default and has no authentication.**
 It is a local visualisation tool. Exposing it on a network is a deployment
 decision, and would need auth and TLS put in front of it.
+
+---
+
+## F — Frontend
+
+**#F1 — Vanilla JS, two stacked canvases, no build step.**
+The heatmap is painted at the grid's native size through a 256-entry lookup
+table and scaled up with `imageSmoothingEnabled = false`, so a cell is honestly
+a cell rather than an interpolation between measurements. Axes, layer lines,
+the crosshair and the screened band go on a second canvas above it. No
+framework, no bundler, no CDN — `python -m blview.cli serve` is the whole
+toolchain.
+
+**#F2 — Colour is assigned by job, and the assignment was validated, not
+eyeballed.**
+Backscatter is a *magnitude*, so it takes a single-hue sequential ramp (blue,
+13 steps, monotonic in lightness). Layer type is *identity*, so it takes
+categorical slots. Blue is deliberately absent from the categorical set: it is
+spent on the ramp, and a line in the ramp's own hue would vanish into it.
+
+The remaining slots were run through the palette validator rather than chosen
+by eye. Assignment — mixing layer orange, residual layer violet, haze yellow,
+cloud magenta — measured on the adjacent pairlist (these are lines, and they
+stack in that physical order): worst CVD ΔE 16.3 light / 13.2 dark against a
+target of 8; worst normal-vision ΔE 19.6 light / 19.3 dark against a floor of
+15. The mixing and residual layers sit physically adjacent, so they were
+deliberately *not* given the palette's known-weak orange↔yellow pair.
+
+**#F3 — Dark mode is selected, not flipped.**
+The categorical hues are the same eight re-stepped for the dark surface, and
+the sequential ramp is anchored the other way round so its low end recedes into
+the dark surface instead of glaring off it.
+
+**#F4 — The display colour window is narrower than the encoded range.
+[tunable]**
+The API quantises over log10 β ∈ [-7.5, -3.5] so nothing is lost in the
+payload, but *showing* that whole range spends most of the ramp on far-field
+detector noise and turns the top of every plot into salt-and-pepper. The
+default display window is [-6.3, -5.0]: its bottom sits at the noise floor so
+noise clamps flat, and its top just above mixing-layer backscatter so the ramp
+separates mixing layer from residual layer from haze. Cloud is two orders of
+magnitude higher and clamps to the darkest step — which is the honest reading,
+since a ceilometer cannot resolve *how* bright a cloud is once the return
+saturates. "Full" and "Auto (1st–99th percentile)" remain selectable.
+
+**#F5 — Layer lines carry a surface-coloured halo.**
+A 5px stroke in the surface colour under the 2px coloured stroke, so a line
+stays legible wherever it crosses a dark part of the heatmap or another layer.
+This is the skill's "2px surface ring on overlapping marks" generalised from
+dots to lines. Dash patterns give each type a second, non-colour identity
+channel.
+
+**#F6 — Gap-filled layer points are drawn at reduced opacity and labelled
+"(filled)" in the tooltip; the latest-profile table says "gap-filled".**
+An interpolated value must never be mistakable for a measured one.
+
+**#F7 — Screened periods are hatched at the plot foot, not hidden.**
+The backscatter is still drawn there — that is real data — but the hatch and
+the tooltip both say no layer is claimed.
+
+**#F8 — Everything is inserted with `textContent`.**
+Site names, instrument strings and layer types reach the page from the API and
+are treated as untrusted text, never as HTML.
+
+**#F9 — Times are UTC everywhere, and labelled as such.**
+No local-time conversion, so a quicklook means the same thing wherever it is
+opened.

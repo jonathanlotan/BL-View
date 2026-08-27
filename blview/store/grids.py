@@ -9,6 +9,7 @@ digits, which is four orders of magnitude more precision than the instrument's
 from __future__ import annotations
 
 import datetime as dt
+import threading
 import warnings
 from pathlib import Path
 from typing import Any, Optional
@@ -19,6 +20,16 @@ from netCDF4 import Dataset
 from .. import UNITS_BETA, UNITS_RANGE, UNITS_TIME, __version__
 
 FILL = np.float32(np.nan)
+
+#: The HDF5 library underneath netCDF4 is generally **not** built thread-safe,
+#: and FastAPI runs synchronous endpoint handlers in a threadpool -- so a single
+#: browser load, which fires /api/window, /api/status and /api/profile/latest at
+#: once, is enough to have two threads inside the library simultaneously.  That
+#: does not merely fail the request: it raises "NetCDF: HDF error" and can take
+#: the process down with it.  Every Dataset open in this module is therefore
+#: serialised on this lock.  Grid reads are milliseconds, so the contention
+#: costs nothing next to being crash-free.
+_HDF5_LOCK = threading.RLock()
 
 
 def write_grid(
@@ -33,7 +44,7 @@ def write_grid(
     """Write one time-height block."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with Dataset(path, "w", format="NETCDF4") as ds:
+    with _HDF5_LOCK, Dataset(path, "w", format="NETCDF4") as ds:
         ds.Conventions = "CF-1.8"
         ds.title = "BL View processed ceilometer attenuated backscatter"
         ds.source = f"blview {__version__}"
@@ -93,7 +104,7 @@ def write_grid(
 
 def read_grid(path: str | Path, variable: str = "beta_att") -> dict[str, Any]:
     """Read one grid file back."""
-    with Dataset(path, "r") as ds:
+    with _HDF5_LOCK, Dataset(path, "r") as ds:
         return {
             "time": np.array(ds.variables["time"][:], dtype="float64"),
             "range": np.array(ds.variables["range"][:], dtype="float64"),

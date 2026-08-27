@@ -164,3 +164,37 @@ def test_empty_store_serves_an_empty_window_rather_than_erroring(tmp_path):
     assert payload["time"] == []
     assert empty.get("/api/layers").json()["count"] == 0
     assert empty.get("/api/profile/latest").status_code == 404
+
+
+def test_concurrent_requests_do_not_corrupt_grid_reads(client):
+    """netCDF4/HDF5 is not thread-safe and FastAPI runs sync handlers in a pool.
+
+    One browser load fires /api/window, /api/status and /api/profile/latest at
+    once. Before grid I/O was serialised this put two threads inside the HDF5
+    library simultaneously, raising "NetCDF: HDF error" and taking the server
+    process down with it.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    paths = [
+        "/api/window?max_time=200&max_range=100",
+        "/api/profile/latest",
+        "/api/status",
+        "/api/layers?hours=24",
+    ] * 6
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        codes = list(pool.map(lambda p: client.get(p).status_code, paths))
+    assert set(codes) == {200}, f"concurrent requests failed: {sorted(set(codes))}"
+
+
+def test_quicklook_page_is_served_with_its_assets(client):
+    page = client.get("/")
+    assert page.status_code == 200
+    body = page.text
+    assert "/static/style.css" in body
+    assert "/static/app.js" in body
+    # The scientific caveat must be in the page itself, not only the API.
+    assert "not temperature" in body.lower()
+    assert client.get("/static/app.js").status_code == 200
+    assert client.get("/static/style.css").status_code == 200
